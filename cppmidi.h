@@ -41,7 +41,7 @@ namespace midi{
 
 namespace midi{
 
-	bool checkMagicString(std::ifstream& inputFile){
+	bool MIDI::checkMagicString(std::ifstream& inputFile){
 		inputFile.seekg(0, inputFile.beg);
 
 		char magicBuffer[4];
