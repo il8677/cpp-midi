@@ -2,6 +2,7 @@
 #define CPP_MIDI_H
 
 #include <cstdint>
+#include <fstream>
 
 namespace midi{
 	typedef enum MidiType : int16_t{
@@ -19,7 +20,7 @@ namespace midi{
 	class MIDI{
 		private:
 		bool checkMagicString(std::ifstream& inputFile);
-		void readHeaderChunk(std::ifstream& inputFile);
+		bool readHeaderChunk(std::ifstream& inputFile);
 
 		public:
 		MIDI(const char* filename);
@@ -32,9 +33,9 @@ namespace midi{
 
 
 }
+#define CPP_MIDI_H_IMPL
 
 #ifdef CPP_MIDI_H_IMPL
-#include <fstream>
 
 #define MIDIMAGICSTRING "MThd"
 
@@ -50,7 +51,7 @@ namespace midi{
 	}
 
 	bool MIDI::readHeaderChunk(std::ifstream& inputFile){
-		if(!checkMagicString()) return false;
+		if(!checkMagicString(inputFile)) return false;
 
 		// Move 4 bytes past the size field
 		inputFile.seekg(4, inputFile.cur);
