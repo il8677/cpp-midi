@@ -1,5 +1,8 @@
-#Compiled files
-tests/test
+# Compiled files
+tests/tests
+
+# Trash Mac files
+.DS_Store
 
 # Prerequisites
 *.d
