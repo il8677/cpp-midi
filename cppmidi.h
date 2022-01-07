@@ -8,13 +8,13 @@ namespace midi{
 		SINGLE = 0,
 		MULTI,
 		ASYNC_MULTI
-	}
+	};
 
 	struct Header{
 		MidiType type;
 		int16_t numTracks;
 		int16_t ticksPerQuater;	
-	}
+	};
 
 	class MIDI{
 		private:
@@ -22,11 +22,13 @@ namespace midi{
 		void readHeaderChunk(std::ifstream& inputFile);
 
 		public:
-		MIDI(const char* filename);		
+		MIDI(const char* filename);
+
+		const Header& getHeader();
 
 		private:
 		Header header;
-	}
+	};
 
 
 }
@@ -56,10 +58,16 @@ namespace midi{
 		inputFile.read((char*)&header, sizeof(Header));
 	}
 
+	const Header& MIDI::getHeader(){
+		return header;
+	}
+
 	MIDI::MIDI(const char* filename){
 		std::ifstream input(filename, std::ios::binary);
 
 		readHeaderChunk(input);
+
+		input.close();
 	}
 }
 #endif
