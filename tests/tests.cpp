@@ -50,7 +50,7 @@ TEST_CASE("Num Tracks Load", "[header][loading]"){
 TEST_CASE("Num Ticks Load", "[header][loading]"){
 	midi::MIDI m;
 	m.loadFile("c.1.1.1284");
-	REQUIRE(m.getHeader().ticksPerQuater == 1284);
+	REQUIRE(m.getHeader().ticksPerQuater == 257);
 	m.loadFile("c.0.1.9");
 	REQUIRE(m.getHeader().ticksPerQuater == 9);
 }
