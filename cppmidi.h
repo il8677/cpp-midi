@@ -5,14 +5,14 @@
 #include <fstream>
 
 namespace midi{
-	typedef enum MidiType : int16_t{
+	typedef enum TrackFormat : int16_t{
 		SINGLE = 0,
 		MULTI,
 		ASYNC_MULTI
 	};
 
 	struct Header{
-		MidiType type;
+		TrackFormat type;
 		int16_t numTracks;
 		int16_t ticksPerQuater;
 
@@ -54,7 +54,7 @@ namespace midi{
 	// Header
 	void Header::swapEndian(){
 		if(!isBigEndian){
-			type = (MidiType)((type >> 8) | (type << 8));
+			type = (TrackFormat)((type >> 8) | (type << 8));
 			numTracks = (numTracks >> 8) | (numTracks << 8);
 			ticksPerQuater = (ticksPerQuater >> 8) | (ticksPerQuater << 8);	
 		}
