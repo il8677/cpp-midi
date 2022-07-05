@@ -41,3 +41,6 @@ tests/tests
 *.app
 
 *.dSYM
+
+# VS Code files
+.vscode/
