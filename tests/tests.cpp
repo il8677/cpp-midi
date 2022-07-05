@@ -17,7 +17,7 @@ TEST_CASE("Bad magic fails to load", "[header][loading]"){
 	REQUIRE_FALSE(m.loadFile("f.0.1.1284"));
 }
 
-TEST_CASE("Non existant file fails to load", "[loading]"){
+TEST_CASE("Non existent file fails to load", "[loading]"){
 	midi::MIDI m;
 	REQUIRE_FALSE(m.loadFile(""));
 	REQUIRE_FALSE(m.loadFile("TTTTTTTTTTTTTT"));
