@@ -19,7 +19,22 @@ namespace midi{
 		ASYNC_MULTI
 	};
 
-	typedef enum TrackEventType : unsigned char{
+	typedef enum TrackEventType : unsigned char {
+		// Meta events
+		SEQ_NUM=0x00,
+		TEXT_EVENT=0x01,
+		COPYRIGHT=0x02,
+		TRACK_NAME=0x03,
+		INSTRUMENT_NAME=0x04,
+		LYRIC=0x05,
+		TEXT_MARKER=0x06,
+		CUE_POINT=0x07,
+		CHANNEL_PREFIX=0x20,
+		TRACK_END=0x2F,
+		SET_TEMPO=0x51,
+		TIME_SIGNATURE=0x58,
+
+		// MIDI Events
 		NOTE_OFF=0x80,
 		NOTE_ON=0x90,
 		POLY=0xA0,
@@ -63,6 +78,11 @@ namespace midi{
 	class Event{
 		private:
 		union EventData{
+
+			struct{
+				uint32_t microsecondsPerQuater;
+			} tempo;
+
 			struct{
 				char note;
 				char velocity;
@@ -155,6 +175,8 @@ namespace midi{
 		Header header;
 
 		std::vector<Track> tracks;
+
+		event_delta_t currentTick;
 	};
 
 }
@@ -301,11 +323,26 @@ namespace midi{
 			inputfile.read((char*)&eventData.program, 1);
 			return 1;
 		case META:{
-			//TODO: Implement meta events properly
-			inputfile.seekg(1, std::ios::cur); // Skip type byte
+			inputfile.read((char*)&type, 1);
+
 			uint32_t variableLength;
 			uint32_t metaLength = readVariableLength(inputfile, &variableLength);
-			inputfile.seekg(metaLength, std::ios::cur); // Skip data
+
+			switch(type){
+				case SET_TEMPO:
+					unsigned char length[3];
+					inputfile.read((char*)length, 3);
+					
+					eventData.tempo.microsecondsPerQuater = 0;
+
+					for(int i = 0; i < 3; i++){
+						eventData.tempo.microsecondsPerQuater |= length[2-i]<<(i*8);
+					}
+					break;
+				default:
+					inputfile.seekg(metaLength, std::ios::cur);
+					break;
+			}
 
 			return metaLength + 1 + variableLength;
 		}
