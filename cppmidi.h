@@ -60,7 +60,7 @@ namespace midi{
 		friend class MIDI;
 	};
 
-	class TrackEvent{
+	class Event{
 		private:
 		union EventData{
 			struct{
@@ -131,12 +131,12 @@ namespace midi{
 	class Track{
 		public:
 
-		const std::vector<TrackEvent>& getEvents() const;
+		const std::vector<Event>& getEvents() const;
 
 		private:
 		bool readTrackChunk(std::ifstream& inputfile);
 
-		std::vector<TrackEvent> events;
+		std::vector<Event> events;
 
 		friend class MIDI;
 	};
@@ -187,18 +187,18 @@ namespace midi{
 		}
 
 		uint32_t readVariableLength(std::ifstream& inputFile, uint32_t* outBytesRead = nullptr){
-			char byte;
-			
 			uint32_t i = 0;
 			if(outBytesRead == nullptr){
 				outBytesRead = &i;
 			}
 
+			char byte;
 			uint32_t length = 0;
-			*outBytesRead = 0;
 
+			*outBytesRead = 0;
 			do{
 				length = length << 7;
+
 				inputFile.read(&byte, 1);
 				length |= (byte & 0b01111111);
 
@@ -249,25 +249,25 @@ namespace midi{
 	}
 
 	// Event
-	const TrackEvent::EventData& TrackEvent::getEventData() const{
+	const Event::EventData& Event::getEventData() const{
 		return eventData;
 	}
 
 
-	event_delta_t TrackEvent::getTickDelta() const{
+	event_delta_t Event::getTickDelta() const{
 		return tickDelta;
 	}
 
-	TrackEventType TrackEvent::getType() const{
+	TrackEventType Event::getType() const{
 		return type;
 	}
 
-	channel_t TrackEvent::getChannel() const{
+	channel_t Event::getChannel() const{
 		return channel;
 	}
 
 
-	uint32_t TrackEvent::readStatusByte(std::ifstream& inputFile){
+	uint32_t Event::readStatusByte(std::ifstream& inputFile){
 		unsigned char byte;
 		inputFile.read((char*)&byte, 1);
 
@@ -281,7 +281,7 @@ namespace midi{
 		return 1;
 	}
 
-	uint32_t TrackEvent::readArgs(std::ifstream& inputfile){
+	uint32_t Event::readArgs(std::ifstream& inputfile){
 		switch (type)
 		{
 		// 2 byte commands
@@ -315,7 +315,7 @@ namespace midi{
 		}
 	}
 
-	uint32_t TrackEvent::readEvent(std::ifstream& inputFile){
+	uint32_t Event::readEvent(std::ifstream& inputFile){
 		uint32_t bytesRead = 0;
 
 		tickDelta = readVariableLength(inputFile, &bytesRead);
@@ -328,7 +328,7 @@ namespace midi{
 
 
 	// Track
-	const std::vector<TrackEvent>& Track::getEvents() const{
+	const std::vector<Event>& Track::getEvents() const{
 		return events;
 	}
 
@@ -338,13 +338,13 @@ namespace midi{
 			return false;
 		}
 
-		// Read len
+		// Read len of track
 		uint32_t len;
 		inputFile.read((char*)&len, 4);
 		if(!isBigEndian) len = swapEndian(len);
 
 		for(uint32_t i = 0; i < len;){
-			TrackEvent event;
+			Event event;
 			i += event.readEvent(inputFile);
 			events.push_back(event);
 		}
@@ -407,12 +407,12 @@ namespace midi{
 
 // std overrides
 namespace std{
-	ostream& operator<<(std::ostream& strm, const midi::TrackEvent& event){
+	ostream& operator<<(std::ostream& strm, const midi::Event& event){
 		return strm << event.getTickDelta() << " " << hex << (int)event.getType() << dec << "\t" << (int)event.getEventData().note.note << "\t" << (int)event.getEventData().note.velocity;
 	}
 
 	ostream& operator<<(std::ostream& strm, const midi::Track& track){
-		for(const midi::TrackEvent& event : track.getEvents()){
+		for(const midi::Event& event : track.getEvents()){
 			strm << event << "\n";
 		}
 		return strm;
