@@ -1,6 +1,7 @@
 #ifndef CPP_MIDI_H
 #define CPP_MIDI_H
 
+#include <cstring>
 #include <cstdint>
 #include <fstream>
 #include <vector>
@@ -40,21 +41,28 @@ namespace midi{
 		META=0xFF
 	};
 
-	struct Header{
+	class MIDI;
+	class Track;
+
+	class Header{
+		public:
+		TrackFormat getType() const;
+		uint16_t getNumTracks() const;
+		uint16_t getTicksPerQuater() const;
+		
+		private:
 		TrackFormat type;
 		uint16_t numTracks;
 		uint16_t ticksPerQuater;
 
 		void swapEndian(); // MIDI is stored as big endian, on little endian systems this needs to be converted
+
+		friend class MIDI;
 	};
 
-	struct TrackEvent{
-		event_delta_t tickDelta;
-		TrackEventType type;
-
-		channel_t channel;
-
-		union{
+	class TrackEvent{
+		private:
+		union EventData{
 			struct{
 				char note;
 				char velocity;
@@ -86,7 +94,22 @@ namespace midi{
 				char LSB;
 				char MSB;
 			} pitchBend, songPosPointer;
-		};
+		} eventData;
+		public:
+
+		const EventData& getEventData() const;
+		
+		event_delta_t getTickDelta() const;
+		TrackEventType getType() const;
+		channel_t getChannel() const;
+
+
+		private:
+
+		event_delta_t tickDelta;
+		TrackEventType type;
+
+		channel_t channel;
 
 		// Reads event from input file
 		//	Returns bytes read
@@ -101,33 +124,34 @@ namespace midi{
 		// Reads event args from input file
 		//	Returns bytes read
 		uint32_t readArgs(std::ifstream& inputfile);
+
+		friend class Track;
 	};
 
 	class Track{
 		public:
-		bool readTrackChunk(std::ifstream& inputfile);
 
 		const std::vector<TrackEvent>& getEvents() const;
 
 		private:
+		bool readTrackChunk(std::ifstream& inputfile);
+
 		std::vector<TrackEvent> events;
+
+		friend class MIDI;
 	};
 
 	class MIDI{
-		private:
-
-		bool readHeaderChunk(std::ifstream& inputFile);
-		bool readTrackChunk(std::ifstream& inputFile);
-
 		public:
-
-		MIDI();
 		bool loadFile(const char* filename);
 
 		const Header& getHeader() const;
 		const std::vector<Track>& getTracks() const;
 
 		private:
+		bool readHeaderChunk(std::ifstream& inputFile);
+		bool readTrackChunk(std::ifstream& inputFile);
+
 		Header header;
 
 		std::vector<Track> tracks;
@@ -138,9 +162,6 @@ namespace midi{
 
 #ifdef CPP_MIDI_H_IMPL
 
-#define MIDIHEADERMAGIC (char[]){'M', 'T', 'h', 'd'}
-#define MIDITRACKMAGIC (char[]){'M', 'T', 'r', 'k'}
-
 #define ERRORLOG(x) std::cerr << x
 #define INFOLOG(x) std::cout << x
 
@@ -149,6 +170,9 @@ namespace midi{
 
 namespace midi{
 	namespace{
+		const char* midiHeaderMagic = "MThd";
+		const char* midiTrackMagic = "MTrk";
+
 		constexpr bool isBigEndian = htonl(47) == 47;
 
 		uint16_t swapEndian(uint16_t n){
@@ -189,7 +213,7 @@ namespace midi{
 			
 			inputFile.read(magicBuffer, 4);
 
-			return !std::memcmp(magicBuffer, MIDITRACKMAGIC, 4);
+			return !std::memcmp(magicBuffer, midiTrackMagic, 4);
 		}
 
 		bool checkHeaderMagic(std::ifstream& inputFile){
@@ -198,12 +222,24 @@ namespace midi{
 			char magicBuffer[4];
 			inputFile.read(magicBuffer, 4);
 
-			return !std::memcmp(magicBuffer, MIDIHEADERMAGIC, 4);
+			return !std::memcmp(magicBuffer, midiHeaderMagic, 4);
 		}
 
 	}
 
 	// Header
+	TrackFormat Header::getType() const{
+		return type;
+	}
+
+	uint16_t Header::getNumTracks() const{
+		return numTracks;
+	}
+
+	uint16_t Header::getTicksPerQuater() const{
+		return ticksPerQuater;
+	}
+
 	void Header::swapEndian(){
 		if(!isBigEndian){
 			type = (TrackFormat)((type >> 8) | (type << 8));
@@ -213,6 +249,24 @@ namespace midi{
 	}
 
 	// Event
+	const TrackEvent::EventData& TrackEvent::getEventData() const{
+		return eventData;
+	}
+
+
+	event_delta_t TrackEvent::getTickDelta() const{
+		return tickDelta;
+	}
+
+	TrackEventType TrackEvent::getType() const{
+		return type;
+	}
+
+	channel_t TrackEvent::getChannel() const{
+		return channel;
+	}
+
+
 	uint32_t TrackEvent::readStatusByte(std::ifstream& inputFile){
 		unsigned char byte;
 		inputFile.read((char*)&byte, 1);
@@ -237,14 +291,14 @@ namespace midi{
 		case CONTROLLER:
 		case PITCH_BEND_CHANGE:
 		case SONG_POS_POINTER:
-			inputfile.read((char*)&note, 2);
+			inputfile.read((char*)&eventData.note, 2);
 
 			return 2;
 		// 1 byte commands
 		case PROGRAM:
 		case CHANNEL_PRESSURE:
 		case SONG_SELECT:
-			inputfile.read(&program.program, 1);
+			inputfile.read((char*)&eventData.program, 1);
 			return 1;
 		case META:{
 			//TODO: Implement meta events properly
@@ -349,16 +403,12 @@ namespace midi{
 		input.close();
 		return true;
 	}
-
-	MIDI::MIDI(){
-
-	}
 }
 
 // std overrides
 namespace std{
 	ostream& operator<<(std::ostream& strm, const midi::TrackEvent& event){
-		return strm << event.tickDelta << " " << hex << (int)event.type << dec << "\t" << (int)event.note.note << "\t" << (int)event.note.velocity;
+		return strm << event.getTickDelta() << " " << hex << (int)event.getType() << dec << "\t" << (int)event.getEventData().note.note << "\t" << (int)event.getEventData().note.velocity;
 	}
 
 	ostream& operator<<(std::ostream& strm, const midi::Track& track){
@@ -370,9 +420,9 @@ namespace std{
 
 	ostream& operator<<(std::ostream& strm, const midi::Header& header){
 		return strm << "Header" 
-			<< "\n\tTrack type: " << header.type 
-			<< "\n\tNum Tracks: " << header.numTracks
-			<< "\n\tTicks/Quater: " << header.ticksPerQuater;
+			<< "\n\tTrack type: " << header.getType() 
+			<< "\n\tNum Tracks: " << header.getNumTracks()
+			<< "\n\tTicks/Quater: " << header.getTicksPerQuater();
 	}
 
 	ostream& operator<<(std::ostream& strm, const midi::MIDI& midiobj){
