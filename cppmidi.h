@@ -84,7 +84,7 @@ namespace midi{
 		union EventData{
 
 			struct{
-				uint32_t microsecondsPerBeat;
+				uint32_t msPerBeat;
 			} tempo;
 
 			struct{
@@ -121,7 +121,7 @@ namespace midi{
 		} eventData;
 		public:
 
-		const EventData& getEventData() const;
+		const EventData& getData() const;
 		
 		event_delta_t getTickDelta() const;
 		event_delta_t getTick() const;
@@ -191,6 +191,8 @@ namespace midi{
 		void registerEventCallback(TrackEventType, std::function<void(Event)>);	
 		void play();
 
+		void setTempo(uint32_t msPerBeat);
+
 		bool done();
 	private:
 		const Event& getNextEvent();
@@ -198,7 +200,7 @@ namespace midi{
 		bool trackIsDone(int trackNum) const;
 		const Event& getNextEventOfTrack(int trackNum) const;
 
-		uint32_t currentMicrosecondsPerBeat = 500000;
+		uint32_t msPerBeat = 500000;
 		event_delta_t currentTick = 0;
 	
 		std::unordered_map<TrackEventType, std::vector<std::function<void(Event)>>> eventCallbacks;
@@ -298,7 +300,7 @@ namespace midi{
 	}
 
 	// Event
-	const Event::EventData& Event::getEventData() const{
+	const Event::EventData& Event::getData() const{
 		return eventData;
 	}
 
@@ -364,10 +366,10 @@ namespace midi{
 					unsigned char length[3];
 					inputfile.read((char*)length, 3);
 					
-					eventData.tempo.microsecondsPerBeat = 0;
+					eventData.tempo.msPerBeat = 0;
 
 					for(int i = 0; i < 3; i++){
-						eventData.tempo.microsecondsPerBeat |= length[2-i]<<(i*8);
+						eventData.tempo.msPerBeat |= length[2-i]<<(i*8);
 					}
 					break;
 				default:
@@ -482,6 +484,14 @@ namespace midi{
 		for(const Track& track : midiObject.getTracks()){
 			nextEvents.push_back(0);
 		}
+		
+		registerEventCallback(SET_TEMPO, [&](Event e){
+			this->setTempo(e.getData().tempo.msPerBeat);
+		});
+	}
+
+	void MIDIPlayer::setTempo(uint32_t msPerBeat){
+		this->msPerBeat = msPerBeat;
 	}
 
 	void MIDIPlayer::play(){
@@ -492,7 +502,7 @@ namespace midi{
 			if(nextEvent.getTick() > currentTick){
 				// Calculate time to sleep
 				const auto TpB = midi.getHeader().getTicksPerBeat();
-				const auto UspB = currentMicrosecondsPerBeat;
+				const auto UspB = msPerBeat;
 				const auto ticks = nextEvent.getTick() - currentTick;
 
 				const auto B = ticks/TpB;
@@ -560,7 +570,7 @@ namespace midi{
 // std overrides
 namespace std{
 	ostream& operator<<(std::ostream& strm, const midi::Event& event){
-		return strm << event.getTickDelta() << " " << hex << (int)event.getType() << dec << "\t" << (int)event.getEventData().note.note << "\t" << (int)event.getEventData().note.velocity;
+		return strm << event.getTickDelta() << " " << hex << (int)event.getType() << dec << "\t" << (int)event.getData().note.note << "\t" << (int)event.getData().note.velocity;
 	}
 
 	ostream& operator<<(std::ostream& strm, const midi::Track& track){
