@@ -7,19 +7,23 @@
 #include <vector>
 #include <ostream>
 #include <iomanip>
+#include <unordered_map>
+#include <chrono>
+#include <thread>
+#include <functional>
 
 
 namespace midi{
 	typedef u_int32_t event_delta_t;
 	typedef unsigned char channel_t;
 
-	typedef enum TrackFormat : int16_t{
+	enum TrackFormat : int16_t{
 		SINGLE = 0,
 		MULTI,
 		ASYNC_MULTI
 	};
 
-	typedef enum TrackEventType : unsigned char {
+	enum TrackEventType : unsigned char {
 		// Meta events
 		SEQ_NUM=0x00,
 		TEXT_EVENT=0x01,
@@ -63,12 +67,12 @@ namespace midi{
 		public:
 		TrackFormat getType() const;
 		uint16_t getNumTracks() const;
-		uint16_t getTicksPerQuater() const;
+		uint16_t getTicksPerBeat() const;
 		
 		private:
 		TrackFormat type;
 		uint16_t numTracks;
-		uint16_t ticksPerQuater;
+		uint16_t ticksPerBeat;
 
 		void swapEndian(); // MIDI is stored as big endian, on little endian systems this needs to be converted
 
@@ -80,7 +84,7 @@ namespace midi{
 		union EventData{
 
 			struct{
-				uint32_t microsecondsPerQuater;
+				uint32_t microsecondsPerBeat;
 			} tempo;
 
 			struct{
@@ -120,6 +124,8 @@ namespace midi{
 		const EventData& getEventData() const;
 		
 		event_delta_t getTickDelta() const;
+		event_delta_t getTick() const;
+
 		TrackEventType getType() const;
 		channel_t getChannel() const;
 
@@ -127,15 +133,14 @@ namespace midi{
 		private:
 
 		event_delta_t tickDelta;
+		event_delta_t tick;
 		TrackEventType type;
 
 		channel_t channel;
 
 		// Reads event from input file
 		//	Returns bytes read
-		uint32_t readEvent(std::ifstream& inputfile);
-
-		private:
+		uint32_t readEvent(std::ifstream& inputfile, event_delta_t prevTick);
 
 		// Reads status byte from input file
 		//	Returns bytes read
@@ -179,6 +184,28 @@ namespace midi{
 		event_delta_t currentTick;
 	};
 
+	class MIDIPlayer{
+	public:
+		MIDIPlayer(const MIDI& midiObject);	
+
+		void registerEventCallback(TrackEventType, std::function<void(Event)>);	
+		void play();
+
+		bool done();
+	private:
+		const Event& getNextEvent();
+
+		bool trackIsDone(int trackNum) const;
+		const Event& getNextEventOfTrack(int trackNum) const;
+
+		uint32_t currentMicrosecondsPerBeat = 500000;
+		event_delta_t currentTick = 0;
+	
+		std::unordered_map<TrackEventType, std::vector<std::function<void(Event)>>> eventCallbacks;
+		std::vector<size_t> nextEvents;
+
+		const MIDI& midi;
+	};
 }
 #define CPP_MIDI_H_IMPL
 
@@ -258,15 +285,15 @@ namespace midi{
 		return numTracks;
 	}
 
-	uint16_t Header::getTicksPerQuater() const{
-		return ticksPerQuater;
+	uint16_t Header::getTicksPerBeat() const{
+		return ticksPerBeat;
 	}
 
 	void Header::swapEndian(){
 		if(!isBigEndian){
 			type = (TrackFormat)((type >> 8) | (type << 8));
 			numTracks = (numTracks >> 8) | (numTracks << 8);
-			ticksPerQuater = (ticksPerQuater >> 8) | (ticksPerQuater << 8);	
+			ticksPerBeat = (ticksPerBeat >> 8) | (ticksPerBeat << 8);	
 		}
 	}
 
@@ -278,6 +305,10 @@ namespace midi{
 
 	event_delta_t Event::getTickDelta() const{
 		return tickDelta;
+	}
+
+	event_delta_t Event::getTick() const{
+		return tick;
 	}
 
 	TrackEventType Event::getType() const{
@@ -333,10 +364,10 @@ namespace midi{
 					unsigned char length[3];
 					inputfile.read((char*)length, 3);
 					
-					eventData.tempo.microsecondsPerQuater = 0;
+					eventData.tempo.microsecondsPerBeat = 0;
 
 					for(int i = 0; i < 3; i++){
-						eventData.tempo.microsecondsPerQuater |= length[2-i]<<(i*8);
+						eventData.tempo.microsecondsPerBeat |= length[2-i]<<(i*8);
 					}
 					break;
 				default:
@@ -352,10 +383,11 @@ namespace midi{
 		}
 	}
 
-	uint32_t Event::readEvent(std::ifstream& inputFile){
+	uint32_t Event::readEvent(std::ifstream& inputFile, event_delta_t prevTick){
 		uint32_t bytesRead = 0;
 
 		tickDelta = readVariableLength(inputFile, &bytesRead);
+		tick = tickDelta + prevTick;
 
 		bytesRead += readStatusByte(inputFile);
 		bytesRead += readArgs(inputFile);
@@ -380,9 +412,12 @@ namespace midi{
 		inputFile.read((char*)&len, 4);
 		if(!isBigEndian) len = swapEndian(len);
 
-		for(uint32_t i = 0; i < len;){
+		event_delta_t prevTick = 0;
+
+		for(uint32_t bytesRead = 0; bytesRead < len;){
 			Event event;
-			i += event.readEvent(inputFile);
+			bytesRead += event.readEvent(inputFile, prevTick);
+			prevTick = event.getTick();
 			events.push_back(event);
 		}
 
@@ -440,6 +475,86 @@ namespace midi{
 		input.close();
 		return true;
 	}
+
+	// MIDIPlayer
+	MIDIPlayer::MIDIPlayer(const MIDI& midiObject) : midi(midiObject){
+		// TODO: Copy midi object to ensure iterator validness?
+		for(const Track& track : midiObject.getTracks()){
+			nextEvents.push_back(0);
+		}
+	}
+
+	void MIDIPlayer::play(){
+		while(!done()){
+			const Event& nextEvent = getNextEvent();
+
+			// Sleep until next event
+			if(nextEvent.getTick() > currentTick){
+				// Calculate time to sleep
+				const auto TpB = midi.getHeader().getTicksPerBeat();
+				const auto UspB = currentMicrosecondsPerBeat;
+				const auto ticks = nextEvent.getTick() - currentTick;
+
+				const auto B = ticks/TpB;
+				const auto Us = UspB * B;
+
+				std::this_thread::sleep_for(std::chrono::microseconds(Us));
+
+			}
+
+			// Call all callbacks for event
+			if(eventCallbacks.find(nextEvent.getType()) != eventCallbacks.end()){
+				for(auto& func : eventCallbacks.at(nextEvent.getType())){
+					func(nextEvent);
+				}
+			}
+
+			currentTick = nextEvent.getTick();
+		}
+	}
+
+	bool MIDIPlayer::done(){
+		for(int i = 0; i < nextEvents.size(); i++){
+			if(!trackIsDone(i)){
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	bool MIDIPlayer::trackIsDone(int trackNum) const{
+		return nextEvents[trackNum] >= midi.getTracks()[trackNum].getEvents().size() - 1;
+	}
+
+	void MIDIPlayer::registerEventCallback(TrackEventType eventType, std::function<void(Event)> func){
+		eventCallbacks[eventType].push_back(func);
+	}
+
+	// TODO: Review readibility
+	// TODO: Fix bug where if track is done the first event is returned
+	const Event& MIDIPlayer::getNextEvent() {
+		size_t* minEventIndex = &nextEvents[0];
+		const Event* minEvent = &getNextEventOfTrack(0);
+
+		for(int i = 0; i < nextEvents.size(); i++){
+			if(trackIsDone(i)) continue;
+			if(getNextEventOfTrack(i).getTick() < minEvent->getTick()){
+				minEventIndex = &nextEvents[i];
+				minEvent = &getNextEventOfTrack(i);
+			}
+		}
+
+		(*minEventIndex)++;
+
+		return *minEvent;
+	}
+
+	
+	const Event& MIDIPlayer::getNextEventOfTrack(int trackNum) const {
+		return midi.getTracks()[trackNum].getEvents()[nextEvents[trackNum]];
+	}
+
 }
 
 // std overrides
@@ -459,7 +574,7 @@ namespace std{
 		return strm << "Header" 
 			<< "\n\tTrack type: " << header.getType() 
 			<< "\n\tNum Tracks: " << header.getNumTracks()
-			<< "\n\tTicks/Quater: " << header.getTicksPerQuater();
+			<< "\n\tTicks/Quater: " << header.getTicksPerBeat();
 	}
 
 	ostream& operator<<(std::ostream& strm, const midi::MIDI& midiobj){
