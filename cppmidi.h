@@ -157,6 +157,8 @@ namespace midi{
 		public:
 
 		const std::vector<Event>& getEvents() const;
+		const Event& getEvent(int index) const;
+
 
 		private:
 		bool readTrackChunk(std::ifstream& inputfile);
@@ -172,6 +174,8 @@ namespace midi{
 
 		const Header& getHeader() const;
 		const std::vector<Track>& getTracks() const;
+		const Track& getTrack(int track) const;
+		const Event& getEvent(int track, int index) const;
 
 		private:
 		bool readHeaderChunk(std::ifstream& inputFile);
@@ -403,6 +407,10 @@ namespace midi{
 		return events;
 	}
 
+	const Event& Track::getEvent(int index) const{
+		return events.at(index);
+	}
+
 	bool Track::readTrackChunk(std::ifstream& inputFile){
 		if(!checkTrackMagic(inputFile)){
 			std::cerr << "Error: no magic string at beginning of track\n";
@@ -453,6 +461,14 @@ namespace midi{
 
 	const std::vector<Track>& MIDI::getTracks() const{
 		return tracks;
+	}
+
+	const Track& MIDI::getTrack(int track) const{
+		return tracks.at(track);
+	}
+
+	const Event& MIDI::getEvent(int track, int index) const{
+		return getTrack(track).getEvent(index);
 	}
 
 	bool MIDI::loadFile(const char* filename){
@@ -534,7 +550,7 @@ namespace midi{
 	}
 
 	bool MIDIPlayer::trackIsDone(int trackNum) const{
-		return nextEvents[trackNum] >= midi.getTracks()[trackNum].getEvents().size() - 1;
+		return nextEvents[trackNum] >= midi.getTrack(trackNum).getEvents().size() - 1;
 	}
 
 	void MIDIPlayer::registerEventCallback(TrackEventType eventType, std::function<void(Event)> func){
@@ -562,7 +578,7 @@ namespace midi{
 
 	
 	const Event& MIDIPlayer::getNextEventOfTrack(int trackNum) const {
-		return midi.getTracks()[trackNum].getEvents()[nextEvents[trackNum]];
+		return midi.getEvent(trackNum, nextEvents[trackNum]);
 	}
 
 }
