@@ -11,6 +11,7 @@
 #include <chrono>
 #include <thread>
 #include <functional>
+#include <cmath>
 
 
 namespace midi{
@@ -82,39 +83,40 @@ namespace midi{
 	class Event{
 		private:
 		union EventData{
-
-			struct{
+			struct EventTempo {
 				uint32_t msPerBeat;
 			} tempo;
 
-			struct{
+			struct EventNote {
 				char note;
 				char velocity;
+
+				float getFreq() const;
 			} note;
 
-			struct{
+			struct EventPoly {
 				char note;
 				char value;
 			} poly;
 
-			struct{
+			struct EventController {
 				char function;
 				char value;
 			} controller;
 
-			struct{
+			struct EventProgram {
 				char program;
 			} program;
 			
-			struct{
+			struct EventChannelPressure {
 				char value;
 			} channelPressure;
 
-			struct{
+			struct EventSongSelect {
 				unsigned char songID;
 			} songSelect;
 
-			struct{
+			struct EventPitchBend {
 				char LSB;
 				char MSB;
 			} pitchBend, songPosPointer;
@@ -213,7 +215,6 @@ namespace midi{
 		const MIDI& midi;
 	};
 }
-#define CPP_MIDI_H_IMPL
 
 #ifdef CPP_MIDI_H_IMPL
 
@@ -401,6 +402,9 @@ namespace midi{
 		return bytesRead;
 	}
 
+	float Event::EventData::EventNote::getFreq() const {
+		return pow(2, (note-69)/12.0f) * 440.0f;
+	}
 
 	// Track
 	const std::vector<Event>& Track::getEvents() const{
